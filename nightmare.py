@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 
 from praw.models import Comment
+from praw.models.listing.mixins.redditor import SubListing
 from typing import Tuple
 
 
@@ -19,7 +20,16 @@ class Nightmare:
 
     def get_latest_comment(self) -> Comment:
         """Return the users latest comment"""
-        return self._reddit_user.comments.new(limit=1).next()
+        comment = self._reddit_user.comments.new(limit=1).next()
+        self._cursor.execute(
+            'select COUNT(*) from nightmare_comments where comment_id = ?;', (comment.id,))
+        if self._cursor.fetchone()[0] == 0:
+            self.add_comment(comment)
+        return comment
+
+    def get_all_comments(self) -> SubListing:
+        """Return all of the users comments"""
+        return self._reddit_user.comments
 
     def need_to_run(self) -> Tuple[bool, Comment]:
         """Determine if the latest comment needs to be nightmared"""
@@ -33,10 +43,20 @@ class Nightmare:
 
     def run(self, comment: Comment):
         """Nightmare the given comment"""
-        comment.reply(self._gen_reply(comment))
+        comment.reply(self.gen_reply(comment))
         comment.downvote()
 
-    def _gen_reply(self, comment: Comment):
+    def add_comment(self, comment: Comment, commit: bool = True):
+        self._cursor.execute(
+            'INSERT INTO "comments" ("comment_id", "body") VALUES (?, ?);', (comment.id, comment.body))
+
+        if commit:
+            self.commit()
+
+    def commit(self):
+        self._con.commit()
+
+    def gen_reply(self, comment: Comment = None):
         """Generate a reply based on the comment"""
         # TODO: actually generate based on body and subreddit of comment
         return 'Great insight!'
